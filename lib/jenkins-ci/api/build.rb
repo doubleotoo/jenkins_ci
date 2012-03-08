@@ -22,6 +22,10 @@ module CI
 module Jenkins
 class Build < JsonResource
 
+  # http://localhost:8080/job/a00-commit/43/
+  # http://localhost:8080/job/<jobname>/<buildnumber>/
+  URL_REGEX = Regexp.new(/job\/(?<jobname>.*)\/(?<buildnumber>\d+)\//)
+
   attr_reader :number,
               :project
   @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
@@ -29,6 +33,36 @@ class Build < JsonResource
   def self.create(number, project, jenkins, lazy_load=true)
     key = generate_cache_key(number.to_s, '') # TODO: convert project to_s (there's a FixNum)
     @cache[key] ||= new(number, project, jenkins, lazy_load)
+  end
+
+  # Create a Build object tied to its associated Project from
+  # the JSON input information.
+  #
+  def self.create_from_json(json, jenkins)
+    url = json['url']
+    buildnumber = json['number']
+    if url.nil? or buildnumber.nil?
+      raise "Build::NilError! #{json}"
+    end
+    project_name = CI::Jenkins::Build.parse_jobname(url)
+    project = CI::Jenkins::Project.create(project_name, jenkins)
+    build = CI::Jenkins::Build.create(buildnumber, project, jenkins)
+  end
+
+  def self.parse(url)
+    if m = URL_REGEX.match(url)
+        return m
+    else
+        raise "ParseError: malformed Build::url='#{url}'"
+    end
+  end
+
+  def self.parse_jobname(url)
+    return parse(url)[:jobname]
+  end
+
+  def self.parse_buildnumber(url)
+    return parse(url)[:buildnumber]
   end
 
   # ==== Arguments
@@ -40,10 +74,27 @@ class Build < JsonResource
   #
   # TODO: add stale JSON duration
   #
-  def initialize(number, project, jenkins, lazy_load=true)
+  def initialize(number, project, jenkins, lazy_load=false)
     super("/job/#{project.name}/#{number}", jenkins, lazy_load)
     @number   = number 
     @project  = project
+  end
+
+  def to_s
+    {
+      :project  => @project.name,
+      :number   =>  @number,
+      :api      =>  instance_variables.collect { |varname|
+                      var = self.instance_variable_get(varname) if varname.match(/^@j_/)
+                      if var.kind_of?(Array)
+                        { varname => "Array<#{var.first.class}>##{var.size}" }
+                      elsif not var.nil?
+                        { varname => var }
+                      else
+                        nil
+                      end
+                    }.compact
+    }
   end
 
   DETAIL = {

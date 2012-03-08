@@ -43,8 +43,7 @@ class TestGetOne < CI::Jenkins::TestCase
     assert_equal(1, @project2.j_upstreamProjects.size)
     assert_equal(1, @project3.j_upstreamProjects.size)
     assert_equal(2, @project4.j_upstreamProjects.size)
-puts
-puts @project4.j_upstreamProjects
+
     @project4.j_upstreamProjects.each do |proj|
         assert([@project2.j_name, @project3.j_name].include?(proj.j_name),
                 'unexpected upstream job')

@@ -67,14 +67,14 @@ class JsonResource < CI::Jenkins::CacheableObject
               :synced,
               :jenkins
 
-  def initialize(path, jenkins, lazy_load=true)
+  def initialize(path, jenkins, lazy_load=false)
     if path.nil? or jenkins.nil?
       raise "NilError"
     end
     @path     = path
     @jenkins  = jenkins
     @synced   = false
-    @json     = sync() unless lazy_load
+    @json     = sync()# unless lazy_load
   end
 
   def print_api
@@ -114,7 +114,7 @@ class JsonResource < CI::Jenkins::CacheableObject
       when 'builds'
         builds = []
         value.each do |build|
-          build = CI::Jenkins::Build.create(build['number'], self, @jenkins)
+          build = CI::Jenkins::Build.create_from_json(build, @jenkins)
           builds.push(build)
         end
         value = builds
@@ -128,7 +128,7 @@ class JsonResource < CI::Jenkins::CacheableObject
            'lastUnsuccessfulBuild'
         build = value
         unless build.nil?
-          build = CI::Jenkins::Build.create(build['number'], self, @jenkins)
+          build = CI::Jenkins::Build.create_from_json(build, @jenkins)
           value = build
         end
       #---- Upstream, Downstream, ActiveConfigurations Projects
@@ -138,10 +138,8 @@ class JsonResource < CI::Jenkins::CacheableObject
         projects = []
         value.each do |project|
           # TODO: infinite recursion
-          if not CI::Jenkins::Project.has_project(project['name'])
           project = CI::Jenkins::Project.create(project['name'], @jenkins)
           projects.push(project)
-          end
         end
         value = projects
       #---- Culprits (Users)

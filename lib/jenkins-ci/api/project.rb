@@ -25,9 +25,14 @@ module Jenkins
 #
 class Project < JsonResource
   attr_reader :name
+  class << self; attr_accessor :cache end
   @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
 
   def self.create(name, jenkins, lazy_load=false) # TODO: lazy_load=true
+    if name.nil? or jenkins.nil?
+      raise "Project::NilError: name=#{name}, jenkins=#{jenkins}"
+    end
+
     key = generate_cache_key(name)
     @cache[key] ||= new(name, jenkins, lazy_load)
   end
@@ -46,8 +51,12 @@ class Project < JsonResource
   # TODO: add stale JSON duration
   #
   def initialize(name, jenkins, lazy_load=true)
-    super("/job/#{name}", jenkins, lazy_load)
+    # TODO: avoid infinite recursion – cleaner way?
+    key = CacheableObject.generate_cache_key(name)
+    Project.cache[key] = self
+
     @name = name
+    super("/job/#{name}", jenkins, lazy_load)
   end
 
   def self.get_all(jenkins, lazy_load=true)

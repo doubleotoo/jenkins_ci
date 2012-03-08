@@ -28,7 +28,7 @@ class User < JsonResource
 
   @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
 
-  def self.create(fulL_name, jenkins, lazy_load=true)
+  def self.create(full_name, jenkins, lazy_load=true)
     key = generate_cache_key(full_name)
 
     @cache[key] ||= new(full_name, jenkins, lazy_load)
@@ -44,8 +44,8 @@ class User < JsonResource
   # TODO: add stale JSON duration
   #
   def initialize(full_name, jenkins, lazy_load=true)
-    super("/user/#{full_name}", jenkins, lazy_load)
     @full_name = full_name
+    super("/user/#{full_name}", jenkins, lazy_load)
   end
 
   DETAIL = {
