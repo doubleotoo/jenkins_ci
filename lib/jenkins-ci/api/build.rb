@@ -30,8 +30,10 @@ class Build < JsonResource
               :project
   @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
 
+  # Create a Build object, loading it with its remote data.
+  #
   def self.create(number, project, jenkins, lazy_load=true)
-    key = generate_cache_key(number.to_s, '') # TODO: convert project to_s (there's a FixNum)
+    key = generate_cache_key(project.name, number.to_s)
     @cache[key] ||= new(number, project, jenkins, lazy_load)
   end
 

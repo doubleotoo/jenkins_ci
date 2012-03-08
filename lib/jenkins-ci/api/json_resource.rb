@@ -18,6 +18,7 @@ require "cached_object.rb"
 require "project.rb"
 require "build.rb"
 require "user.rb"
+require "queue_item.rb"
 
 #-------------------------------------------------------------------------------
 #  Jenkins
@@ -107,9 +108,6 @@ class JsonResource < CI::Jenkins::CacheableObject
       # NOTE: infinite recursion problem unless we cache results;
       # project A downstreamProjects> ... project B upstreamProjects> ... project A
       case key
-      #---- Actions
-      when 'actions'
-        actions = []
       #---- Builds
       when 'builds'
         builds = []
@@ -137,11 +135,23 @@ class JsonResource < CI::Jenkins::CacheableObject
            'activeConfigurations'
         projects = []
         value.each do |project|
-          # TODO: infinite recursion
           project = CI::Jenkins::Project.create(project['name'], @jenkins)
           projects.push(project)
         end
         value = projects
+      #---- Queue Item (Project)
+      when 'queueItem'
+        item = value
+        unless item.nil?
+        value = CI::Jenkins::QueueItem.new(
+                    item['blocked'],
+                    item['buildable'],
+                    item['params'],
+                    item['stuck'],
+                    item['task'],
+                    item['why'],
+                    item['buildableStartMilliseconds'])
+        end
       #---- Culprits (Users)
       when 'culprits'
         users = []
