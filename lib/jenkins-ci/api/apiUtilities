@@ -1,0 +1,784 @@
+# = apiUtilities -- Jenkins API utilities
+#
+# Author:  Justin Too (too1@llnl.gov)
+#
+# == Introduction
+#
+# Query the Jenkins API.
+#
+###############################################################################
+require 'getoptlong'
+
+require 'rubygems'
+require 'timeout'
+require 'open4'
+require 'json'
+require 'libxml'
+require 'tempfile'
+require 'date'
+require 'uri'
+require 'app_config'
+require 'grit'
+
+###############################################################################
+# Application configuration
+###############################################################################
+
+# Load a YAML configuration file.
+#
+# +config_file+ is the file containing configuration definitions.
+#
+# Returns a hash of configuration definitions
+#
+def load_configuration(config_file)
+  config = nil
+
+  # Load the configuration file.
+  begin
+    config = AppConfig.setup { |config|
+      config[:storage_method] = :yaml
+      config[:path] = config_file
+    }
+  rescue Errno::ENOENT
+    abort "#{config_file}: No such file"
+  end
+  
+  # Ensure that all expected configurations have been accounted for.
+  missing_config = []
+  [ :jenkins_url, :admin_user, :admin_pass,
+    :curl_timeout, :main_repo ].each { |confvar|
+    if config[confvar].nil?
+      missing_config.push(confvar)
+    end
+  }
+  unless missing_config.empty?
+    puts <<-EOF
+Missing definition for:  #{missing_config.join(',')}
+ in configuration file:  #{config_file}
+    EOF
+    exit 1
+  end
+
+  puts "Loaded configuration definitions from #{config_file}: " +
+    config.inspect if $verbose
+
+  config
+end
+
+# Global state
+
+$config      = load_configuration( "#{File.dirname File.expand_path $0}/config.yml" )
+$verbose     = false
+$jenkins_url = $config[:jenkins_url]
+$timeout     = $config[:curl_timeout]
+
+###############################################################################
+#  Jenkins API utilities
+###############################################################################
+
+#
+# Retrieve the builds from a job.
+#
+# +job+ is the job's identifier.
+# +number+ is the target build number(s)
+# +description+ is the target build description(s)
+# +result+ is the target result(s); one of
+#  SUCCESS:: build succeeded
+#  FAILURE:: build failed
+#  ABORTED:: build was aborted
+#  RUNNING:: build is still running
+#  *::       (default) any result
+#
+# Returns a list of build-hashes with the following keys:
+#  number::      the build's build number
+#  description:: the build's description
+#  result::      the build's result
+#  url::         the build's url
+#  building::    true if the build is currently building
+# that is sorted in descending order by +number+.
+#
+# TODO: use regular expressions for matching to allow multiple
+# build sets.
+#
+def get_builds(job, number='*', description='*', result='*')
+  builds = {}
+
+  json = get_json('/job/' + job +
+    '/api/json?tree=builds[number,description,result,url,building]')
+  if json.nil?
+  	puts "Error: Could not retrieve the historical builds for " + job
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    builds = json['builds']
+    if builds.nil?
+    	puts "Error: Builds is nil for " + job
+    	puts
+    	puts "JSON: " + json.inspect
+    	exit 1
+    else
+      # Select all matching builds
+      builds = builds.select do |build|
+        number_match = true
+        description_match = true
+        result_match  = true
+
+	    unless number.to_s == '*'
+          b_number = build['number']
+          if b_number.nil?
+            puts "Error: Build number is nil"
+            puts "build: " + build.inspect
+            exit 1
+          else
+            number_match = b_number == number
+          end
+        end
+
+        unless description == '*'
+          description_match = build['description'] == description
+        end
+
+        unless result == '*'
+          b_result = build['result']
+          b_result = 'RUNNING' if b_result.nil?
+          result_match = b_result == result
+        end
+      
+        number_match and description_match and result_match  
+      end
+    end
+  end
+
+  puts "Job #{job}::builds[number='#{number}', description='#{description}'," +
+     " result='#{result}', url='*'] = " + builds.inspect if $verbose
+
+  builds.sort! { |x,y|
+    y['number'] <=> x['number'] 
+  }
+end
+
+def get_builds_with_result(job, result='*')
+  get_builds(job, '*', '*', result)
+end
+
+def get_stable_builds(job)
+  get_builds_with_result(job, 'SUCCESS')
+end
+
+def get_aborted_builds(job)
+  get_builds_with_result(job, 'ABORTED')
+end
+
+def get_failed_builds(job)
+  get_builds_with_result(job, 'FAILURE')
+end
+
+#
+# Retrieve the lastBuild::number from a job.
+#
+# +job+ is the job's identifier.
+#
+# Returns the last build number of the job.
+#
+def get_last_build_number(job)
+  buildnumber = nil
+
+  json = get_json("/job/#{job}/api/json?tree=lastBuild[number]")
+  if json.nil?
+  	puts "Error: Could not retrieve a last build number for " + job
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    lastbuild = json['lastBuild']
+    # Job may not have any historical builds
+    unless lastbuild.nil?
+      buildnumber = lastbuild['number']
+      if buildnumber.nil?
+  	    puts "Error: Could not retrieve #{job}'s last build number."
+  	    puts
+  	    puts "JSON: " + json.inspect
+  	    exit 1
+      end
+    end
+  end
+
+  puts "Job #{job}::lastBuild[number] = #{buildnumber}" if $verbose
+  buildnumber
+end
+
+#
+# Retrieve the lastStableBuild::number from a job.
+#
+# +job+ is the job's identifier.
+#
+# Returns the last stable build number of the job.
+#
+def get_last_stable_build_number(job)
+  buildnumber = nil
+
+  json = get_json("/job/#{job}/api/json?tree=lastStableBuild[number]")
+  if json.nil?
+  	puts "Error: Could not retrieve a last stable build number for " + job
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    last_stable_build = json['lastStableBuild']
+    unless last_stable_build.nil?
+      buildnumber = last_stable_build['number']
+      if buildnumber.nil?
+  	    puts "Error: Could not retrieve #{job}'s last stable build number."
+  	    puts
+  	    puts "JSON: " + json.inspect
+  	    exit 1
+      end
+    end
+  end
+
+  puts "Job #{jobname}::lastStableBuild = #{buildnumber}" if $verbose
+  buildnumber  
+end
+
+#
+# Retrieve the lastBuiltRevision::SHA1 from a job's JSON API.
+#
+# +job+ is the job's identifier.
+# +build+ is the target build number.
+#
+# Returns the last-built revision of the job.
+#
+def get_last_built_revision_via_json(job, build)
+  buildurl = job + '/' + build
+  revision = nil
+
+  json = get_json('/job/' + buildurl +
+    '/api/json?tree=actions[lastBuiltRevision[SHA1]]')
+  if json.nil?
+  	puts "Error: Could not retrieve a last-built revision for " + job
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    json['actions'].each do |action_hash|
+      lastBuiltRevision = action_hash['lastBuiltRevision']
+      unless lastBuiltRevision.nil?
+      	revision = lastBuiltRevision['SHA1']
+      end
+    end
+  end
+
+  if revision.nil?
+	puts "Error: A build's lastBuiltRevision cannot be nil"
+    puts
+    puts "JSON: " + json.inspect
+	exit 1
+  elsif not sha1_valid?(revision)
+	puts "Error: #{job}/#{build}'s description is not a valid SHA1" 
+    puts
+    puts "revision: " + revision
+    exit 1
+  end
+
+  puts "Job #{job}##{build}::lastBuiltRevision = #{revision}" if $verbose
+  revision
+end
+
+#
+# Retrieve the lastBuiltRevision::SHA1 from a build's description.
+# (We assume that the SHA1 was set somehow in the build's description)
+#
+# +job+ is the job's identifier.
+# +build+ is the target build number.
+#
+# Returns the last-built revision of the job or nil if.
+#
+#   <revision> <branch>
+#
+#   182828... too1-jenkins-test
+#
+def get_revision_via_description(job, build)
+  description = get_build_description(job, build)
+  if description.nil? or description.empty? or description.split.size != 2
+    puts "Error: #{job}/#{build}'s description is nil/empty/malformed"
+    puts
+    puts "description: #{description}"
+    exit 1
+  else
+    revision = description.split[0]
+    branch = description.split[1]
+    if not sha1_valid?(revision) or branch.nil? or branch.empty?
+      puts "Error: #{job}/#{build}'s description is not a valid SHA1 + branch"
+      puts
+      puts "revision: #{revision}"
+      puts "branch: #{branch}"
+      exit 1
+    end
+  end
+
+  puts "Job #{job}##{build}::(description)lastBuiltRevision = #{description}" if $verbose
+  return {
+    'revision' => revision,
+    'branch'   => branch
+  }
+end #-end get_revision_via_description
+
+def sha1_valid?(sha1)
+  sha1.match(/^[0-9a-zA-Z]{40}$/)
+end
+
+#
+# Set a job's build description.
+#
+# +job+ is the job's identifier.
+# +build+ is the target build number.
+# +description+	is the new description for the build.
+#
+def set_build_description(job, build, description)
+  buildurl = job + '/' + build
+  print "Setting description to '#{description}' for BUILD_URL=" +
+    buildurl if $verbose
+
+  submit_query($jenkins_url + '/job/' + buildurl +
+    "/submitDescription?description=#{URI.escape(description)}")
+end
+
+#
+# Get a job's build description.
+#
+# +job+ is the job's identifier.
+# +build+ is the target build number.
+#
+# Returns the job's description as a +String+.
+#
+def get_build_description(job, build)
+  buildurl = job + '/' + build
+  json = get_json("/job/#{buildurl}/api/json?tree=description")
+  if json.nil?
+  	puts "Error: Could not retrieve #{job}'s description"
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    description = json['description']
+    description = "" if description.nil?
+    #if description.nil?
+    #	puts "Error: Could not find a description for " + buildurl
+    #	puts
+    #	puts "JSON: " + json.inspect
+    #	exit 1
+    #end
+  end
+
+  puts "#{build_url}::description = #{description}" if $verbose
+  description
+end
+
+#
+# Get a portion of an XML document using xpath.
+#
+# +xml+ is an XML Document.
+# +xpath+ is the XPath Query used to extract portions of the xml document.
+#
+# Returns the result of the XPath Query.
+#
+def query_xml(xml, xpath)
+  xpath_result = nil
+
+  xpath_result = xml.find(xpath)
+  if xpath_result.nil?
+    puts xpath + " query returned no nodes"
+    puts "xpath_result = " + xpath_result
+    exit 1
+  end
+
+  yield xpath_result if block_given?
+
+  xpath_result
+end
+
+#
+# Get a job's config.xml.
+#
+# +job+ is the job's identifier.
+# +xpath+ is the XPath Query used to extract portions of config.xml.
+#
+# Returns a hash with keys:
+# :config_xml:: is the config.xml XML Document.
+# :xpath_result:: is the result of the XPath query If +xpath+ is not nil.
+#
+def get_config_xml(job, xpath)
+  url = $jenkins_url + "/job/#{job}/config.xml"
+
+  config_xml = nil 
+  xpath_result = nil
+
+  submit_query(url) do |stdout|
+    Tempfile.open('configxml-') do |f|
+       puts "Loading #{job}'s config.xml (temporarily saved to #{f.path})" if $verbose
+       f.puts stdout.read
+       f.rewind
+       f.flush
+
+       # Parse the config.xml file
+       #parser = LibXML::XML::Parser.io(stdout, :encoding =>
+       parser = LibXML::XML::Parser.file(f.path, :encoding =>
+         LibXML::XML::Encoding::UTF_8)
+       config_xml = parser.parse
+    end
+  end
+
+  # Locate the target XML node using xpath
+  unless xpath.nil?
+    xpath_result = query_xml(config_xml, xpath)
+  end
+
+  yield config_xml, xpath_result if block_given?
+
+  return {:config_xml => config_xml, :xpath_reuslt => xpath_result}
+end
+
+#
+# Update a job's config.xml.
+#
+# +job+ is the job's identifier.
+# +&block+ is the users logic to update the config.xml.
+#
+def update_config_xml(job, &block)
+  url = $jenkins_url + "/job/#{job}/config.xml"
+
+  get_config_xml(job, nil) do |config_xml, xpath_result|
+    # Allow caller to update the XML document
+    xml_before = config_xml.to_s
+    puts "Before update:\n #{xml_before}" if $verbose
+
+    yield config_xml if block_given?
+
+    xml_after = config_xml.to_s
+    puts "After update:\n #{xml_after}" if $verbose
+    
+    # POST only an *updated* config.xml
+    Tempfile.open('configxml-') do |f|
+       puts "Updating #{job}'s config.xml (temporarily saved to #{f.path})" if
+	     $verbose
+
+       f.puts config_xml.to_s
+       f.rewind
+       f.flush
+
+       submit_query("-d @#{f.path} #{url}")
+    end if xml_after != xml_before
+  end
+end
+
+#
+# Update a portion of a job's config.xml.
+#
+# +job+ is the job's identifier.
+# +xpath+ is the XPath Query used to extract portions of config.xml.
+# +&block+ is the users logic to update the config.xml.
+#
+def update_xpath_in_config_xml(job, xpath, &block)
+  update_config_xml(job) do |config_xml|
+    xpath_result = query_xml(config_xml, xpath)
+    yield config_xml, xpath_result
+  end
+end
+
+#
+# Update a job's description (using config.xml).
+#
+# +job+ is the job's identifier.
+# +new_description+	is the new description for the job.
+#
+def update_description(job, new_description)
+  xpath='/project/description'
+
+  update_xpath_in_config_xml(job, xpath) do |config_xml, xpath_result|
+    description = xpath_result.first
+    if description.nil?
+      puts "#{xpath} returned no results for #{config_xml}"
+	  puts
+	  puts "job: " + job
+	  puts "xpath_result: '#{xpath_result}'"
+	  puts "config_xml: " + config_xml.to_s
+	  exit 1
+    end
+    
+    previous_description = description.content
+    if $verbose
+      puts "Switching [#{job}]'s description:"
+	  puts
+	  puts "  '#{previous_description}' -> '#{new_description}'"
+    end
+    description.content = new_description.to_s
+  end
+end
+
+#
+# Set a job's Git branch.
+#
+# +job+ is the job's identifier.
+# +branch+ is the ew branch name.
+# Form:: refs/heads/branchname
+#
+# config.xml (current format):
+#	<?xml version="1.0" encoding="UTF-8"?>
+#	<project>
+#	  <actions/>
+#	  <description/>
+#	  <keepDependencies>false</keepDependencies>
+#	  <properties/>
+#	  <scm class="hudson.plugins.git.GitSCM">
+#	    <branches>
+#	      <hudson.plugins.git.BranchSpec>
+# ====>	        <name>*/master</name>
+#	      </hudson.plugins.git.BranchSpec>
+#	    </branches>
+#
+#       ...
+#
+def update_config_branch(job, branch)
+  url = $jenkins_url + "/job/#{job}/config.xml"
+
+  # Get the job's config.xml file
+  submit_query(url) do |stdout|
+    # Parse the config.xml file
+    parser = LibXML::XML::Parser.io(stdout, :encoding =>
+      LibXML::XML::Encoding::UTF_8)
+    config_doc = parser.parse
+    
+    # Locate the Git branch XML node
+    xpath='/project/scm/branches/hudson.plugins.git.BranchSpec/name'
+    gitbranch = config_doc.find(xpath).first
+    (puts "#{xpath} returned no nodes" and exit 1) if gitbranch.nil?
+    
+    # Update the Git branch that will be tested
+    puts "Before update:\n #{config_doc.to_s}" if $verbose
+
+    previous_branch = gitbranch.content
+    puts "Switching [#{job}]'s Git branch: #{previous_branch} -> #{branch}"
+    gitbranch.content = branch
+
+    puts "After update:\n #{config_doc.to_s}" if $verbose
+    
+    # POST the updated config.xml file
+    Tempfile.open('gitbranch-') do |f|
+       puts "Tempfile opened at #{f.path} with #{job}'s updated config.xml" if
+         $verbose
+       f.puts config_doc.to_s
+       f.rewind
+       f.flush
+
+       submit_query("-d @#{f.path} #{url}")
+    end# Tempfile.open
+  end# submit_query
+end
+
+#
+# Retrieve the linked jobs (upstream/downstream) of a Job.
+#
+# +job+ is the job's identifier.
+# +streamId+ is one of [upstream, downstream]
+#
+# Returns a list of the job's linked jobs.
+#
+def get_linked_jobs(job, stream_id)
+  valid_stream_ids = ['upstreamProjects', 'downstreamProjects']
+  if not valid_stream_ids.include?(stream_id)
+	puts "Error: invalid streamId " + stream_id
+    puts
+    puts "valid stream IDs: " + valid_stream_ids
+    exit 1
+  end
+
+  linked_jobs = []
+
+  json = get_json("/job/#{job}/api/json?tree=#{stream_id}[name]")
+  if json.nil?
+  	puts "Error: Could not retrieve the #{stream_id} linked jobs for " + job
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    json[stream_id].each do |job|
+      name = job['name']
+      if name.nil?
+  	    puts "Error: A linked-job's name cannot be nil"
+  	    puts
+  	    puts "JSON: " + json.inspect
+  	    exit 1
+      else
+        linked_jobs.push(name)
+	  end
+    end
+  end
+
+  puts "Job #{job}::#{stream_id}= #{linked_jobs.inspect}" if $verbose
+  linked_jobs
+end
+
+#
+# Check if a build is currently building.
+#
+# +job+ is the job's identifier.
+# +build+ is the target build number.
+#
+# Returns true if job/build is currently building.
+#
+def building?(job, build)
+  json = get_json("/job/#{job}/#{build}/api/json?tree=building")
+  if json.nil?
+  	puts "Error: Could not check if #{job}/#{build} is currently building"
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    building = json['building']
+    if building.nil?
+  	  puts "Error: #{job}/#{build} building? status cannot be nil"
+  	  puts
+  	  puts "JSON: " + json.inspect
+    else
+      building = building.to_s
+      unless building.match(/true|false/)
+  	    puts "Error: unexpected status '#{building}' for " + 
+     	  job + '/' + job + '::building?'
+      end
+    end
+  end
+
+  puts "Job #{job}/#{build}::building = #{building}" if $verbose
+  building.match(/true/)
+end
+
+#
+# Check if a build is currently pending.
+#
+# +job+ is the job's identifier.
+# +target_reason+ is a regular expression to match with the pending reason.
+#
+# Returns true if job is currently pending.
+#
+def pending?(job, target_reason=/is offline/)
+  pending = false
+  pending_reason = nil
+
+  puts "target_reason=#{target_reason}" if $verbose
+
+  json = get_json( "/job/#{job}/api/json?tree=queueItem[why]" )
+  if json.nil?
+    puts "Error: Could not check if #{job} is currently pending"
+    puts
+    puts "JSON: " + json.inspect
+    exit 1
+  else
+    queueItem = json['queueItem']
+    if queueItem.nil?
+      pending = false # empty queue
+    else
+      pending_reason = queueItem['why']
+      pending = pending_reason.match( target_reason )
+    end
+  end
+
+  puts "Job #{job}::pending=#{pending} - #{pending_reason}" if $verbose
+  pending
+end
+
+#
+# Check if a job is stable for a particular revision.
+#
+# +job+ is the job's identifier.
+# +revision+ is the target SCM revision.
+#
+# Returns true if job is stable at the +revision+.
+#
+def stable_at_revision?(job, revision)
+  stable_builds = get_stable_builds(job)
+
+  match = false
+
+  if stable_builds.nil?
+  	puts "Error: Could not get #{job}'s stable builds"
+  	puts
+  	puts "Target revision: " + revision
+  	exit 1
+  else
+    stable_builds.each do |build|
+      if not build['result'] == 'SUCCESS'
+        puts "Error: somehow we got a non-stable build"
+        puts "build: " + build.inspect
+        exit 1
+      else
+        description = build['description']
+        if not sha1_valid?(description)
+          puts "Error: #{job}/#{build['number']}'s description is not a " +
+            "valid SHA1" 
+          puts
+          puts "description: " + description 
+          exit 1
+        else 
+          break if match = (description == revision)
+        end
+      end
+    end
+  end
+
+  puts "Job #{job}/#{revision}::stable? = #{match}" if $verbose
+  match == true
+end
+
+#
+# Get the result of a build.
+#
+# +job+ is the job's identifier.
+# +build+ is the target build number.
+#
+# Returns one of [SUCCESS, FAILURE, ABORTED, RUNNING]
+#
+def get_result(job, build)
+  valid_results = ['SUCCESS', 'FAILURE', 'ABORTED', 'RUNNING']
+  result = nil
+
+  json = get_json("/job/#{job}/#{build}/api/json?tree=result")
+  if json.nil?
+  	puts "Error: Could not get #{job}/#{build}'s result"
+  	puts
+  	puts "JSON: " + json.inspect
+  	exit 1
+  else
+    result = json['result']
+    if result.nil?
+      result = 'RUNNING'
+    else
+      unless valid_results.include?(result)
+  	    puts "Error: unexpected result value '#{result}' for " + 
+     	  job + '/' + build + '::result'
+        puts "Valid results: " + valid_results.inspect
+      end
+    end
+  end
+
+  puts "Job #{job}/#{build}::result = #{result}" if $verbose
+  result
+end
+
+
+# Error messages
+#######################################################################
+#module Error
+  def error_no_stable_build(job, json)
+  end
+  
+  def error_build_building(job, jobnumber, json)
+  	exit 5
+  end
+  
+  def error_unexpected_value(value, description)
+  	exit 6
+  end
+#end
+
+
