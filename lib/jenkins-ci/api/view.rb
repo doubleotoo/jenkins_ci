@@ -28,7 +28,7 @@ class View  < JsonResource
   class << self; attr_accessor :cache end
   @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
 
-  def self.create(name, jenkins, lazy_load=false) # TODO: lazy_load=true
+  def self.create(name, jenkins, lazy_load=true)
     if name.nil? or jenkins.nil?
       raise "View::NilError: name=#{name}, jenkins=#{jenkins}"
     end

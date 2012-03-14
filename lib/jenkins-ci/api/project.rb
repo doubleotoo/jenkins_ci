@@ -28,18 +28,12 @@ class Project < JsonResource
   class << self; attr_accessor :cache end
   @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
 
-  def self.create(name, jenkins, lazy_load=false) # TODO: lazy_load=true
+  def self.create(name, jenkins, lazy_load=true)
     if name.nil? or jenkins.nil?
       raise "Project::NilError: name=#{name}, jenkins=#{jenkins}"
     end
-
     key = generate_cache_key(name)
     @cache[key] ||= new(name, jenkins, lazy_load)
-  end
-
-  def self.has_project(name)
-    key = generate_cache_key(name)
-    @cache.has_key?(key)
   end
 
   # ==== Arguments
@@ -56,7 +50,6 @@ class Project < JsonResource
     Project.cache[key] = self
 
     @name = name
-    puts "Project::#{name}::super" if $verbose
     super("/job/#{name}", jenkins, lazy_load)
   end
 

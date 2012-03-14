@@ -76,10 +76,49 @@ class Build < JsonResource
   #
   # TODO: add stale JSON duration
   #
-  def initialize(number, project, jenkins, lazy_load=false)
+  def initialize(number, project, jenkins, lazy_load=true)
     super("/job/#{project.name}/#{number}", jenkins, lazy_load)
     @number   = number 
     @project  = project
+  end
+
+  # Return this Build's description.
+  #
+  # To improve performance, we will fetch only the description if
+  # this Build object has not yet been synced. This is opposed to
+  # performing a full-blown sync.
+  def j_description
+    if not @synced or @j_description.nil?
+      build_desc = JsonResource.create(
+                      "/job/#{@project.name}/#{@number}",
+                      @jenkins,
+                      lazy_load=false,
+                      parameters=['tree=description'])
+      @j_description = build_desc.j_description
+    end
+    return @j_description
+  end
+
+  def summary
+    if not @synced or (
+        @j_number.nil? or @j_description.nil? or @j_result.nil? or @j_building.nil?
+    )
+      build_summary = JsonResource.create(
+                          "/job/#{@project.name}/#{@number}",
+                          @jenkins,
+                          lazy_load=false,
+                          parameters=['tree=number,building,result,description'])
+      @j_number       = build_summary.j_number
+      @j_description  = build_summary.j_description
+      @j_result       = build_summary.j_result
+      @j_building     = build_summary.j_building
+    end
+    return {
+        :j_number       => @j_number,
+        :j_description  => @j_description,
+        :j_result       => @j_result,
+        :j_building     => @j_building
+    }
   end
 
   def to_s

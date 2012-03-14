@@ -19,6 +19,7 @@ require "project.rb"
 require "build.rb"
 require "user.rb"
 require "queue_item.rb"
+require "result.rb"
 
 #-------------------------------------------------------------------------------
 #  Jenkins
@@ -67,15 +68,22 @@ class JsonResource < CI::Jenkins::CacheableObject
               :json,
               :synced,
               :jenkins
+  @cache = {}
 
-  def initialize(path, jenkins, lazy_load=false)
+  def self.create(path, jenkins, lazy_load=true, parameters=[])
+    key = generate_cache_key(path)
+    @cache[key] ||= new(path, jenkins, lazy_load, parameters)
+  end
+
+  def initialize(path, jenkins, lazy_load=true, parameters=[])
     if path.nil? or jenkins.nil?
       raise "NilError"
     end
     @path     = path
     @jenkins  = jenkins
     @synced   = false
-    @json     = sync()# unless lazy_load
+    @parameters = parameters
+    sync() unless lazy_load
   end
 
   def print_api
@@ -102,77 +110,83 @@ class JsonResource < CI::Jenkins::CacheableObject
   # Returns this Project's JSON string.
   #
   def sync(use_cached=false)
-    puts self.class
-    @json = get_json(use_cached)
+    if not @synced
+      puts "Syncing #{@path}" if $verbose
+      @json = get_json(use_cached)
 
-    @json.each do |key, value|
-      puts "json::#{key}=#{value}" if $verbose
-      # NOTE: infinite recursion problem unless we cache results;
-      # project A downstreamProjects> ... project B upstreamProjects> ... project A
-      case key
-      #---- Builds
-      when 'builds'
-        builds = []
-        value.each do |build|
-          build = CI::Jenkins::Build.create_from_json(build, @jenkins)
-          builds.push(build)
-        end
-        value = builds
-      when 'firstBuild',
-           'lastBuild',
-           'lastCompletedBuild',
-           'lastFailedBuild',
-           'lastStableBuild',
-           'lastSuccessfulBuild',
-           'lastUnstableBuild',
-           'lastUnsuccessfulBuild'
-        build = value
-        unless build.nil?
-          build = CI::Jenkins::Build.create_from_json(build, @jenkins)
-          value = build
-        end
-      #---- Upstream, Downstream, Projects
-      when 'jobs',
-           'downstreamProjects',
-           'upstreamProjects'
-        projects = []
-        value.each do |project|
-          project = CI::Jenkins::Project.create(project['name'], @jenkins)
-          projects.push(project)
-        end
-        value = projects
-      #---- Queue Item (Project)
-      when 'queueItem'
-        item = value
-        unless item.nil?
-        value = CI::Jenkins::QueueItem.new(
-                    item['blocked'],
-                    item['buildable'],
-                    item['params'],
-                    item['stuck'],
-                    item['task'],
-                    item['why'],
-                    item['buildableStartMilliseconds'])
-        end
-      #---- Culprits (Users)
-      #when 'culprits'
-      #  users = []
-      #  value.each do |user|
-      #    user = CI::Jenkins::User.create(user['fullName'], @jenkins)
-      #    users.push(user)
-      #  end
-      #  value = users
-      else
-        # raise "unknown attribute '#{key}' with value '#{value}'"
-      end #-end case key
+      @json.each do |key, value|
+        # NOTE: infinite recursion problem unless we cache results;
+        # project A downstreamProjects> ... project B upstreamProjects> ... project A
+        case key
+        #---- Builds
+        when 'builds'
+          builds = []
+          value.each do |build|
+            build = CI::Jenkins::Build.create_from_json(build, @jenkins)
+            builds.push(build)
+          end
+          value = builds
+        when 'firstBuild',
+             'lastBuild',
+             'lastCompletedBuild',
+             'lastFailedBuild',
+             'lastStableBuild',
+             'lastSuccessfulBuild',
+             'lastUnstableBuild',
+             'lastUnsuccessfulBuild'
+          build = value
+          unless build.nil?
+            build = CI::Jenkins::Build.create_from_json(build, @jenkins)
+            value = build
+          end
+        #---- Upstream, Downstream, Projects
+        when 'jobs',
+             'downstreamProjects',
+             'upstreamProjects'
+          projects = []
+          value.each do |project|
+            project = CI::Jenkins::Project.create(project['name'], @jenkins)
+            projects.push(project)
+          end
+          value = projects
+        #---- Queue Item (Project)
+        when 'queueItem'
+          item = value
+          unless item.nil?
+          value = CI::Jenkins::QueueItem.new(
+                      item['blocked'],
+                      item['buildable'],
+                      item['params'],
+                      item['stuck'],
+                      item['task'],
+                      item['why'],
+                      item['buildableStartMilliseconds'])
+          end
+        #---- Culprits (Users)
+        #when 'culprits'
+        #  users = []
+        #  value.each do |user|
+        #    user = CI::Jenkins::User.create(user['fullName'], @jenkins)
+        #    users.push(user)
+        #  end
+        #  value = users
+        #---- Result (build)
+        when 'result'
+          result = value
+          value = CI::Jenkins::Result.new(result)
+        else
+          # raise "unknown attribute '#{key}' with value '#{value}'"
+        end #-end case key
 
-      ############################
-      # !! Create the attribute !!
-      ############################
-      create_attribute("j_#{key}", value)
-      ############################
-    end #-end @json.each
-    #print_api()
+        ############################
+        # !! Create the attribute !!
+        ############################
+        create_attribute("j_#{key}", value)
+        ############################
+      end #-end @json.each
+
+      @synced = true
+    end
     return @json
   end #-end sync (use_cached=false)
 
@@ -187,7 +201,7 @@ class JsonResource < CI::Jenkins::CacheableObject
     if use_cached and not (@json.nil? or @json.empty?)
       return @json
     else
-      return @jenkins.get_json(@path)
+      return @jenkins.get_json(@path, @parameters)
     end
   end
 
@@ -195,15 +209,26 @@ class JsonResource < CI::Jenkins::CacheableObject
 #  Private
 #-------------------------------------------------------------------------------
 
-  # Creates a Class method so it only needs to be created once
-  def create_method(name, &block)
-    #raise "duplicate method '#{name}'" if self.respond_to?(name)
-    if not self.respond_to?(name)
-      self.class.send(:define_method, name, &block)
+  def method_missing(meth, *args, &block)
+    if meth.to_s =~ /^j_(.+)$/
+      sync()
+      send(meth, *args, &block)
+    else
+      super # You *must* call super if you don't handle the
+            # method, otherwise you'll mess up Ruby's method
+            # lookup.
     end
   end
 
-  # Creates an instance variable and its accessor methods.
+  # Creates an instance method (per object) so each instance will
+  # have its own methods.
+  def create_obj_method(name, &block)
+    raise "duplicate method '#{name}'" if self.respond_to?(name)
+    metaclass = class << self; self; end
+    metaclass.send(:define_method, name, &block)
+  end
+
+  # Creates an instance variable and its accessor methods (per object).
   #
   # ==== Attributes
   #
@@ -218,13 +243,13 @@ class JsonResource < CI::Jenkins::CacheableObject
     instance_variable_set("@" + name, default_value)
 
     if writeable
-      create_method("#{name}=".to_sym) { |value|
+      create_obj_method("#{name}=".to_sym) { |value|
         instance_variable_set("@" + name, value)
       }
     end
 
     if readable
-      create_method(name.to_sym) { instance_variable_get("@" + name) }
+      create_obj_method(name.to_sym) { instance_variable_get("@" + name) }
     end
   end
 end #-end class JsonResource
