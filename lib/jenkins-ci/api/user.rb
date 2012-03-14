@@ -45,6 +45,7 @@ class User < JsonResource
   #
   def initialize(full_name, jenkins, lazy_load=true)
     @full_name = full_name
+    #super("/user/#{URI.escape(full_name)}", jenkins, lazy_load)
     super("/user/#{full_name}", jenkins, lazy_load)
   end
 

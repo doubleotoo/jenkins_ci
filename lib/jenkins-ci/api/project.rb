@@ -56,6 +56,7 @@ class Project < JsonResource
     Project.cache[key] = self
 
     @name = name
+    puts "Project::#{name}::super" if $verbose
     super("/job/#{name}", jenkins, lazy_load)
   end
 

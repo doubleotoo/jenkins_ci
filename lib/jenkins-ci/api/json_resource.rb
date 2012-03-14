@@ -102,9 +102,11 @@ class JsonResource < CI::Jenkins::CacheableObject
   # Returns this Project's JSON string.
   #
   def sync(use_cached=false)
+    puts self.class
     @json = get_json(use_cached)
 
     @json.each do |key, value|
+      puts "json::#{key}=#{value}" if $verbose
       # NOTE: infinite recursion problem unless we cache results;
       # project A downstreamProjects> ... project B upstreamProjects> ... project A
       case key
@@ -129,10 +131,10 @@ class JsonResource < CI::Jenkins::CacheableObject
           build = CI::Jenkins::Build.create_from_json(build, @jenkins)
           value = build
         end
-      #---- Upstream, Downstream, ActiveConfigurations Projects
-      when 'downstreamProjects',
-           'upstreamProjects',
-           'activeConfigurations'
+      #---- Upstream, Downstream, Projects
+      when 'jobs',
+           'downstreamProjects',
+           'upstreamProjects'
         projects = []
         value.each do |project|
           project = CI::Jenkins::Project.create(project['name'], @jenkins)
@@ -153,13 +155,13 @@ class JsonResource < CI::Jenkins::CacheableObject
                     item['buildableStartMilliseconds'])
         end
       #---- Culprits (Users)
-      when 'culprits'
-        users = []
-        value.each do |user|
-          user = CI::Jenkins::User.create(user['fullName'], @jenkins)
-          users.push(user)
-        end
-        value = users
+      #when 'culprits'
+      #  users = []
+      #  value.each do |user|
+      #    user = CI::Jenkins::User.create(user['fullName'], @jenkins)
+      #    users.push(user)
+      #  end
+      #  value = users
       else
         # raise "unknown attribute '#{key}' with value '#{value}'"
       end #-end case key

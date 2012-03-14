@@ -60,9 +60,9 @@ class Jenkins
   # Returns the obfuscated query.
   #
   def submit_query(url)
-    query="curl --fail --silent --show-error --globoff --user #{@user}:#{@password} #{url}"
+    query="curl --fail --silent --show-error --globoff --user #{@user}:#{@password} \"#{url}\""
     obfuscated_query=query.sub(@password, "xxx")
-
+    puts obfuscated_query if $verbose
     query_stdout = nil
     curl_error = nil
     status = Open4::popen4(query) do |pid, stdin, query_stdout, stderr|
@@ -112,7 +112,10 @@ class Jenkins
     query=@base_url + encoded_url + '/api/json?' + parameters.join('&')
     submit_query(query) { |obfuscated_query, query_stdout|
       begin
-        json = query_stdout.read
+        status = Timeout::timeout(240) {
+            json = query_stdout.read
+        }
+  
         json = JSON.parse(json)
       rescue JSON::ParserError => parser_error
         raise JenkinsError,
