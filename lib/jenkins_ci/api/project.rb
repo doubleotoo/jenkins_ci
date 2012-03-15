@@ -88,37 +88,37 @@ class Project < JsonResource
     }
   end
 
-  DETAIL = {
+#  DETAIL = {
 #   Internal symbol               Jenkins symbol            Description
 #   ===============               ==============            ===========
-    :j_actions                =>  'action',                 # array
-    :j_description            =>  'description',            # html string
-    :j_displayName            =>  'displayName',            # string
-    :j_name                   =>  'name',                   # string
-    :j_url                    =>  'url',                    # string
-    :j_buildable              =>  'buildable',              # boolean
-    :j_builds                 =>  'builds',                 # array of Build objects
-    :j_color                  =>  'color',                  # color (blue, red, yellow, grey)
-    :j_firstBuild             =>  'firstBuild',             # Build object
-    :j_healthReport           =>  'healthReport',           # HealthReport object
-    :j_inQueue                =>  'inQueue',                # boolean
-    :j_keepDependencies       =>  'keepDependencies',       # boolean
-    :j_lastBuild              =>  'lastBuild',              # Build object
-    :j_lastCompletedBuild     =>  'lastCompletedBuild',     # Build object
-    :j_lastFailedBuild        =>  'lastFailedBuild',        # Build object
-    :j_lastStableBuild        =>  'lastStableBuild',        # Build object
-    :j_lastSuccessfulBuild    =>  'lastSuccessfulBuild',    # Build object
-    :j_lastUnstableBuild      =>  'lastUnstableBuild',      # Build object
-    :j_lastUnsuccessfulBuild  =>  'lastUnsuccessfulBuild',  # Build object
-    :j_nextBuildNumber        =>  'nextBuildNumber',        # integer
-    :j_property               =>  'property',               # array of ?
-    :j_queueItem              =>  'queueItem',              # ?
-    :j_concurrentBuild        =>  'concurrentBuild',        # boolean
-    :j_downstreamProjects     =>  'downstreamProjects',     # array of Project objects
-    :j_scm                    =>  'scm',                    # ?
-    :j_upstreamProjects       =>  'upstreamProjects',       # array of Project objects
-    :j_activeConfigurations   =>  'activeConfigurations'    # array of Project objects
-  }
+#    :j_actions                =>  'action',                 # array
+#    :j_description            =>  'description',            # html string
+#    :j_displayName            =>  'displayName',            # string
+#    :j_name                   =>  'name',                   # string
+#    :j_url                    =>  'url',                    # string
+#    :j_buildable              =>  'buildable',              # boolean
+#    :j_builds                 =>  'builds',                 # array of Build objects
+#    :j_color                  =>  'color',                  # color (blue, red, yellow, grey)
+#    :j_firstBuild             =>  'firstBuild',             # Build object
+#    :j_healthReport           =>  'healthReport',           # HealthReport object
+#    :j_inQueue                =>  'inQueue',                # boolean
+#    :j_keepDependencies       =>  'keepDependencies',       # boolean
+#    :j_lastBuild              =>  'lastBuild',              # Build object
+#    :j_lastCompletedBuild     =>  'lastCompletedBuild',     # Build object
+#    :j_lastFailedBuild        =>  'lastFailedBuild',        # Build object
+#    :j_lastStableBuild        =>  'lastStableBuild',        # Build object
+#    :j_lastSuccessfulBuild    =>  'lastSuccessfulBuild',    # Build object
+#    :j_lastUnstableBuild      =>  'lastUnstableBuild',      # Build object
+#    :j_lastUnsuccessfulBuild  =>  'lastUnsuccessfulBuild',  # Build object
+#    :j_nextBuildNumber        =>  'nextBuildNumber',        # integer
+#    :j_property               =>  'property',               # array of ?
+#    :j_queueItem              =>  'queueItem',              # ?
+#    :j_concurrentBuild        =>  'concurrentBuild',        # boolean
+#    :j_downstreamProjects     =>  'downstreamProjects',     # array of Project objects
+#    :j_scm                    =>  'scm',                    # ?
+#    :j_upstreamProjects       =>  'upstreamProjects',       # array of Project objects
+#    :j_activeConfigurations   =>  'activeConfigurations'    # array of Project objects
+#  }
 
 end #-end class Project
 end #-end module Jenkins

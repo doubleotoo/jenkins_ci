@@ -60,17 +60,17 @@ class QueueItem
     }
   end
 
-  DETAIL = {
+#  DETAIL = {
 #   Internal symbol               Jenkins symbol            Description
 #   ===============               ==============            ===========
-    :j_blocked                =>  'blocked',                # boolean
-    :j_buildable              =>  'buildable',              # boolean
-    :j_params                 =>  'params',                 # string
-    :j_stuck                  =>  'stuck',                  # boolean
-    :j_task                   =>  'task',                   # {name, url}
-    :j_why                    =>  'why',                    # string
-    :j_buildableStartMilliseconds =>  'buildableStartMilliseconds' # integer
-  }
+#    :j_blocked                =>  'blocked',                # boolean
+#    :j_buildable              =>  'buildable',              # boolean
+#    :j_params                 =>  'params',                 # string
+#    :j_stuck                  =>  'stuck',                  # boolean
+#    :j_task                   =>  'task',                   # {name, url}
+#    :j_why                    =>  'why',                    # string
+#    :j_buildableStartMilliseconds =>  'buildableStartMilliseconds' # integer
+#  }
 
 end #-end class QueueItem
 end #-end module Jenkins

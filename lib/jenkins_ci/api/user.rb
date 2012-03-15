@@ -49,16 +49,16 @@ class User < JsonResource
     super("/user/#{full_name}", jenkins, lazy_load)
   end
 
-  DETAIL = {
+#  DETAIL = {
 #   Internal symbol           Jenkins symbol            Description
 #   ===============           ==============            ===========
-    :j_absoluteUrl      =>    'absoluteUrl',            # string
-    :j_description      =>    'description',            # string
-    :j_fullName         =>    'fullName',               # string
-    :j_id               =>    'id',                     # string
-    :j_property         =>    'property'                # array of {}
-      # { "address" => "email" }
-  }
+#    :j_absoluteUrl      =>    'absoluteUrl',            # string
+#    :j_description      =>    'description',            # string
+#    :j_fullName         =>    'fullName',               # string
+#    :j_id               =>    'id',                     # string
+#    :j_property         =>    'property'                # array of {}
+#      # { "address" => "email" }
+#  }
 
 end #-end class Build
 end #-end module Jenkins

@@ -138,25 +138,25 @@ class Build < JsonResource
     }
   end
 
-  DETAIL = {
+#  DETAIL = {
 #   Internal symbol           Jenkins symbol            Description
 #   ===============           ==============            ===========
-    :j_actions          =>    'action',                 # array
-    :j_artifacts        =>    'artifacts',              # array of ?
-    :j_building         =>    'building',               # boolean
-    :j_description      =>    'description',            # string
-    :j_duration         =>    'duration',               # integer
-    :j_fullDisplayName  =>    'fullDisplayName',        # string
-    :j_id               =>    'id',                     # string (e.g. "2011-11-08_18-52-40")
-    :j_keepLog          =>    'keepLog',                # boolean
-    :j_number           =>    'number',                 # integer
-    :j_result           =>    'result',                 # string (SUCCESS, ...)
-    :j_timestamp        =>    'timestamp',              # integer
-    :j_url              =>    'url',                    # string
-    :j_builtOn          =>    'builtOn',                # string (e.g. "hudson-rose-25")
-    :j_changeSet        =>    'changeSet',              # hash { :items => [] }
-    :j_culprits         =>    'culprits'                # array of User objects
-  }
+#    :j_actions          =>    'action',                 # array
+#    :j_artifacts        =>    'artifacts',              # array of ?
+#    :j_building         =>    'building',               # boolean
+#    :j_description      =>    'description',            # string
+#    :j_duration         =>    'duration',               # integer
+#    :j_fullDisplayName  =>    'fullDisplayName',        # string
+#    :j_id               =>    'id',                     # string (e.g. "2011-11-08_18-52-40")
+#    :j_keepLog          =>    'keepLog',                # boolean
+#    :j_number           =>    'number',                 # integer
+#    :j_result           =>    'result',                 # string (SUCCESS, ...)
+#    :j_timestamp        =>    'timestamp',              # integer
+#    :j_url              =>    'url',                    # string
+#    :j_builtOn          =>    'builtOn',                # string (e.g. "hudson-rose-25")
+#    :j_changeSet        =>    'changeSet',              # hash { :items => [] }
+#    :j_culprits         =>    'culprits'                # array of User objects
+#  }
 
 end #-end class Build
 end #-end module Jenkins

@@ -66,15 +66,15 @@ class View  < JsonResource
     }
   end
 
-  DETAIL = {
+#  DETAIL = {
 #   Internal symbol               Jenkins symbol            Description
 #   ===============               ==============            ===========
-    :j_description            =>  'description',            # html string
-    :j_jobs                   =>  'jobs',                   # array [{name, url, color}, ..]
-    :j_name                   =>  'name',                   # string
-    :j_property               =>  'property',               # array (?)
-    :j_url                    =>  'url',                    # string
-  }
+#    :j_description            =>  'description',            # html string
+#    :j_jobs                   =>  'jobs',                   # array [{name, url, color}, ..]
+#    :j_name                   =>  'name',                   # string
+#    :j_property               =>  'property',               # array (?)
+#    :j_url                    =>  'url',                    # string
+#  }
 
 end #-end class View
 end #-end module Jenkins
