@@ -29,7 +29,7 @@ module CI
 module Jenkins
 class JsonResource
   class << self
-    private :new, :allocate
+    protected :new, :allocate
   end
   attr_reader :path,  # resource path, e.g. '/job/C0-Start'
               :json,

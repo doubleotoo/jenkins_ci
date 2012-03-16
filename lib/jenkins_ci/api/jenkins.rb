@@ -62,7 +62,7 @@ class Jenkins
   def submit_query(url)
     query="curl --fail --silent --show-error --globoff --user #{@user}:#{@password} \"#{url}\""
     obfuscated_query=query.sub(@password, "xxx")
-    puts obfuscated_query if $verbose
+    $logger.debug obfuscated_query
     query_stdout = nil
     curl_error = nil
     status = Open4::popen4(query) do |pid, stdin, query_stdout, stderr|

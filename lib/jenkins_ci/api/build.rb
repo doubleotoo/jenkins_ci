@@ -51,40 +51,38 @@ class Build < JsonResource
   # Create a Build object, loading it with its remote data.
   #
   def self.create(number, project, jenkins)
+    key = generate_cache_key(number.to_s, project.name)
     begin
+        # If the build exists, it could be stale.
+        #
+        # For example, when the Build was persisted for the first time,
+        # it was still building/queued/etc.
+        #
         o = DB::Build.find_by_project_name_and_number!(project.name, number)
+        if o.result.nil? or o.building == true
+            # sync with remote Json source
+            b = @cache[key] = Build.new(number, project, jenkins)
+
+            o.result   = b.j_result
+            o.building = b.j_building
+            o.save
+            o.logger.info "updated #{o.to_s}"
+        else
+            o.logger.debug "up-to-date #{o.to_s}"
+        end
     rescue ActiveRecord::RecordNotFound
-        key = generate_cache_key(number.to_s, project.name)
-        o = @cache[key] ||= new(number, project, jenkins)
+        b = @cache[key] ||= new(number, project, jenkins)
 
         o = DB::Build.create(:project_name  => project.name,
                              :number        => number,
-                             :url           => o.j_url,
-                             :branch        => branch(o.j_description),
-                             :sha1          => sha1(o.j_description),
-                             :result        => o.j_result)
-    end
+                             :building      => b.j_building,
+                             :url           => b.j_url,
+                             :branch        => branch(b.j_description),
+                             :sha1          => sha1(b.j_description),
+                             :result        => b.j_result)
+        $logger.info "created #{o.to_s}"
+    end #-end begin..rescue
     return o
-  end
-
-  def self.branch(description)
-    desc = description
-    if not desc.nil?
-        branch = desc.split[1]
-        return branch
-    else
-        return nil
-    end
-  end
-
-  def self.sha1(description)
-    desc = description
-    if not desc.nil?
-        sha1 = desc.split[0]
-        return sha1
-    else
-        return nil
-    end
   end
 
   # ==== Arguments
@@ -104,17 +102,17 @@ class Build < JsonResource
         @project  = project
 
         super("/job/#{project.name}/#{number}", jenkins, parameters=[
-            'tree=number,description,url,result'])
+            'tree=number,description,url,building,result'])
     end
   end
 
   # Setup this Resource with its corresponding Jenkins JSON.
   def sync
-      puts "Syncing #{@path}" if $verbose
+      $logger.debug "Syncing #{@path}"
       @json = get_json
 
       @json.each do |key, value|
-        puts "Build::#{key}"
+        $logger.debug "Build::#{key}"
         #case key
         #---- <description>
         #when '<key>',
@@ -128,35 +126,24 @@ class Build < JsonResource
       end #-end @json.each
   end #-end sync
 
-  #-----------------------------------------------------------------------------
-  #  API
-  #-----------------------------------------------------------------------------
-
-  # Return a summary of this Build.
-  #
-  # To improve performance, we will fetch only summary information if
-  # this Build object has not yet been synced. This is opposed to
-  # performing a full-blown sync.
-  def summary
-    if not @synced or (
-        @j_number.nil? or @j_description.nil? or @j_result.nil? or @j_building.nil?
-    )
-      build_summary = JsonResource.create(
-                          "/job/#{@project.name}/#{@number}",
-                          @jenkins,
-                          lazy_load=false,
-                          parameters=['tree=number,building,result,description'])
-      @j_number       = build_summary.j_number
-      @j_description  = build_summary.j_description
-      @j_result       = build_summary.j_result
-      @j_building     = build_summary.j_building
+  def self.branch(description)
+    desc = description
+    if not desc.nil?
+        branch = desc.split[1]
+        return branch
+    else
+        return nil
     end
-    return {
-        :j_number       => @j_number,
-        :j_description  => @j_description,
-        :j_result       => @j_result,
-        :j_building     => @j_building
-    }
+  end
+
+  def self.sha1(description)
+    desc = description
+    if not desc.nil?
+        sha1 = desc.split[0]
+        return sha1
+    else
+        return nil
+    end
   end
 
   #-----------------------------------------------------------------------------

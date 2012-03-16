@@ -67,6 +67,14 @@ class Project < JsonResource
   def self.create(name, jenkins)
     begin
         o = DB::Project.find_by_project_name!(name)
+
+        # * sync with remote Json source
+        # * update builds
+        #
+        p = Project.new(name, jenkins)
+        #o.<attr> = p.j_<attr>
+        #o.save
+        #o.logger.info "updated #{o.to_s}"
     rescue ActiveRecord::RecordNotFound
         key = generate_cache_key(name)
         # Don't want to create again...
@@ -83,8 +91,8 @@ class Project < JsonResource
             end
 
             o.url       = json.j_url
-            o.buildable = json.j_buildable
             o.save
+            $logger.info "created #{o.to_s}"
         end
     end
     return o
@@ -104,23 +112,23 @@ class Project < JsonResource
 
         @name = name
         super("/job/#{name}", jenkins, parameters=[
-            'tree=name,url,buildable,builds[number]'])
+            'tree=name,url,builds[number]'])
     end
   end
 
   # Setup this Resource with its corresponding Jenkins JSON.
   def sync
-      puts "Syncing #{@path}" if $verbose
+      $logger.debug "Syncing #{@path}"
       @json = get_json
 
       @json.each do |key, value|
-        puts "Project::#{key}=#{value}" if $verbose
+        $logger.debug "Project::#{key}=#{value}"
         case key
         #---- Builds
         when 'builds'
           builds = []
           value.each do |build|
-            build = CI::Jenkins::Build.create(build["number"], self, @jenkins)
+            build = CI::Jenkins::Build.create(build['number'], self, @jenkins)
             builds.push(build)
           end
           value = builds

@@ -21,14 +21,13 @@ load "project.rb"
 
 module CI
 module Jenkins
-
 class View < JsonResource
   class << self; attr_accessor :cache end
   @cache = {}
 
   attr_reader :name
 
-  # Returns a DB::Project (ActiveRecord object)
+  # Returns a CI::Jenkins::Project (JSON resource)
   def self.create(name, jenkins, exclude_projects=[])
     key = generate_cache_key(name)
     json = @cache[key] ||= new(name, jenkins, exclude_projects)
@@ -51,13 +50,13 @@ class View < JsonResource
 
   # Setup this Resource with its corresponding Jenkins JSON.
   def sync
-      puts "Syncing #{@path}" if $verbose
+      $logger.debug "Syncing #{@path}"
       @json = get_json
 
       @json.each do |key, value|
-        puts "Project::#{key}=#{value}" if $verbose
+        $logger.debug "View::#{key}=#{value}"
         case key
-        #---- Upstream and Downstream Projects
+        #---- Jobs
         when 'jobs'
           projects = []
           value.each do |project|
@@ -79,7 +78,6 @@ class View < JsonResource
   def <=>(o)
     return self.name <=> o.name
   end
-
 end #-end class View
 end #-end module Jenkins
 end #-end module CI
