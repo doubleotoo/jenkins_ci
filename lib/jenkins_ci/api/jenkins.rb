@@ -40,7 +40,7 @@ class Jenkins
   #  * +timeout+ is the number of seconds to wait for the Jenkins server to
   #    respond before timing out a query.
   #
-  def initialize(user, password, base_url, timeout=5)
+  def initialize(user, password, base_url, timeout=30)
     @user     = user
     @password = password
     @base_url = base_url

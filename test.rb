@@ -1,14 +1,10 @@
-load 'jenkins.rb'
-load 'json_resource.rb'
-#load 'project.rb'
-load 'view.rb'
+require 'jenkins_ci'
+
+puts "Running test file..."
 
 $verbose = true
 
-jenkins = CI::Jenkins::Jenkins.new('hudson-rose', 'HRoseP4ss', 'http://hudson-rose-30:8080/')
-#jenkins = CI::Jenkins::Jenkins.new('too1', 'Jatusa1@', 'http://localhost:8080/')
-
-def integration_jobs
+def integration_jobs(jenkins)
   builds_by_branch = {}
   view = CI::Jenkins::View.create('Integration', jenkins, false)
   view.j_jobs.each do |job|
@@ -37,7 +33,11 @@ def integration_jobs
         puts "    #{job_name} has #{builds.size} builds"
         builds.each do |build|
           summary = build.summary
-          puts "    `---#{summary[:j_result]} #{summary[:j_number]}"
+          if summary[:j_building] == true
+            puts "    `---#{summary[:j_number]} BUILDING "
+          else
+            puts "    `---#{summary[:j_number]} #{summary[:j_result]}"
+          end
         end
       end
     end
@@ -49,4 +49,8 @@ def get_all_projects
     puts project.j_name
   end
 end
+
+jenkins = CI::Jenkins::Jenkins.new('hudson-rose', 'HRoseP4ss', 'http://hudson-rose-30:8080/')
+
+integration_jobs(jenkins)
 

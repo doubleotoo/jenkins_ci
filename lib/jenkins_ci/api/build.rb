@@ -20,51 +20,71 @@ load "json_resource.rb"
 
 module CI
 module Jenkins
+#
+#  DETAIL = {
+#   Internal symbol           Jenkins symbol            Description
+#   ===============           ==============            ===========
+#    :j_actions          =>    'action',                 # array
+#    :j_artifacts        =>    'artifacts',              # array of ?
+#    :j_building         =>    'building',               # boolean
+#    :j_description      =>    'description',            # string
+#    :j_duration         =>    'duration',               # integer
+#    :j_fullDisplayName  =>    'fullDisplayName',        # string
+#    :j_id               =>    'id',                     # string (e.g. "2011-11-08_18-52-40")
+#    :j_keepLog          =>    'keepLog',                # boolean
+#    :j_number           =>    'number',                 # integer
+#    :j_result           =>    'result',                 # string (SUCCESS, ...)
+#    :j_timestamp        =>    'timestamp',              # integer
+#    :j_url              =>    'url',                    # string
+#    :j_builtOn          =>    'builtOn',                # string (e.g. "hudson-rose-25")
+#    :j_changeSet        =>    'changeSet',              # hash { :items => [] }
+#    :j_culprits         =>    'culprits'                # array of User objects
+#  }
+#
 class Build < JsonResource
-
-  # http://localhost:8080/job/a00-commit/43/
-  # http://localhost:8080/job/<jobname>/<buildnumber>/
-  URL_REGEX = Regexp.new(/job\/(?<jobname>.*)\/(?<buildnumber>\d+)\//)
+  class << self; attr_accessor :cache end
+  @cache = {}
 
   attr_reader :number,
               :project
-  @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
 
   # Create a Build object, loading it with its remote data.
   #
-  def self.create(number, project, jenkins, lazy_load=true)
-    key = generate_cache_key(project.name, number.to_s)
-    @cache[key] ||= new(number, project, jenkins, lazy_load)
-  end
+  def self.create(number, project, jenkins)
+    begin
+        o = DB::Build.find_by_project_name_and_number!(project.name, number)
+    rescue ActiveRecord::RecordNotFound
+        key = generate_cache_key(number.to_s, project.name)
+        o = @cache[key] ||= new(number, project, jenkins)
 
-  # Create a Build object tied to its associated Project from
-  # the JSON input information.
-  #
-  def self.create_from_json(json, jenkins)
-    url = json['url']
-    buildnumber = json['number']
-    if url.nil? or buildnumber.nil?
-      raise "Build::NilError! #{json}"
+        o = DB::Build.create(:project_name  => project.name,
+                             :number        => number,
+                             :url           => o.j_url,
+                             :branch        => branch(o.j_description),
+                             :sha1          => sha1(o.j_description),
+                             :result        => o.j_result)
     end
-    project_name = CI::Jenkins::Build.parse_jobname(url)
-    project = CI::Jenkins::Project.create(project_name, jenkins)
-    build = CI::Jenkins::Build.create(buildnumber, project, jenkins)
+    return o
   end
 
-  def self.parse(url)
-    if m = URL_REGEX.match(url)
-        return m
+  def self.branch(description)
+    desc = description
+    if not desc.nil?
+        branch = desc.split[1]
+        return branch
     else
-        raise "ParseError: malformed Build::url='#{url}'"
+        return nil
     end
   end
 
-  def self.parse_jobname(url)
-    return parse(url)[:jobname]
-  end
-
-  def self.parse_buildnumber(url)
-    return parse(url)[:buildnumber]
+  def self.sha1(description)
+    desc = description
+    if not desc.nil?
+        sha1 = desc.split[0]
+        return sha1
+    else
+        return nil
+    end
   end
 
   # ==== Arguments
@@ -76,29 +96,47 @@ class Build < JsonResource
   #
   # TODO: add stale JSON duration
   #
-  def initialize(number, project, jenkins, lazy_load=true)
-    super("/job/#{project.name}/#{number}", jenkins, lazy_load)
-    @number   = number 
-    @project  = project
+  def initialize(number, project, jenkins)
+    if number.nil? or project.nil?
+        raise "NilError: number=#{number}, project=#{project}"
+    else
+        @number   = number 
+        @project  = project
+
+        super("/job/#{project.name}/#{number}", jenkins, parameters=[
+            'tree=number,description,url,result'])
+    end
   end
 
-  # Return this Build's description.
+  # Setup this Resource with its corresponding Jenkins JSON.
+  def sync
+      puts "Syncing #{@path}" if $verbose
+      @json = get_json
+
+      @json.each do |key, value|
+        puts "Build::#{key}"
+        #case key
+        #---- <description>
+        #when '<key>',
+        #end #-end case key
+
+        ############################
+        # !! Create the attribute !!
+        ############################
+        create_attribute("j_#{key}", value)
+        ############################
+      end #-end @json.each
+  end #-end sync
+
+  #-----------------------------------------------------------------------------
+  #  API
+  #-----------------------------------------------------------------------------
+
+  # Return a summary of this Build.
   #
-  # To improve performance, we will fetch only the description if
+  # To improve performance, we will fetch only summary information if
   # this Build object has not yet been synced. This is opposed to
   # performing a full-blown sync.
-  def j_description
-    if not @synced or @j_description.nil?
-      build_desc = JsonResource.create(
-                      "/job/#{@project.name}/#{@number}",
-                      @jenkins,
-                      lazy_load=false,
-                      parameters=['tree=description'])
-      @j_description = build_desc.j_description
-    end
-    return @j_description
-  end
-
   def summary
     if not @synced or (
         @j_number.nil? or @j_description.nil? or @j_result.nil? or @j_building.nil?
@@ -121,120 +159,13 @@ class Build < JsonResource
     }
   end
 
-  def to_s
-    {
-      :project  => @project.name,
-      :number   =>  @number,
-      :api      =>  instance_variables.collect { |varname|
-                      var = self.instance_variable_get(varname) if varname.match(/^@j_/)
-                      if var.kind_of?(Array)
-                        { varname => "Array<#{var.first.class}>##{var.size}" }
-                      elsif not var.nil?
-                        { varname => var }
-                      else
-                        nil
-                      end
-                    }.compact
-    }
+  #-----------------------------------------------------------------------------
+  #  Built-in
+  #-----------------------------------------------------------------------------
+  def <=>(o)
+    return self.number <=> o.number
   end
-
-#  DETAIL = {
-#   Internal symbol           Jenkins symbol            Description
-#   ===============           ==============            ===========
-#    :j_actions          =>    'action',                 # array
-#    :j_artifacts        =>    'artifacts',              # array of ?
-#    :j_building         =>    'building',               # boolean
-#    :j_description      =>    'description',            # string
-#    :j_duration         =>    'duration',               # integer
-#    :j_fullDisplayName  =>    'fullDisplayName',        # string
-#    :j_id               =>    'id',                     # string (e.g. "2011-11-08_18-52-40")
-#    :j_keepLog          =>    'keepLog',                # boolean
-#    :j_number           =>    'number',                 # integer
-#    :j_result           =>    'result',                 # string (SUCCESS, ...)
-#    :j_timestamp        =>    'timestamp',              # integer
-#    :j_url              =>    'url',                    # string
-#    :j_builtOn          =>    'builtOn',                # string (e.g. "hudson-rose-25")
-#    :j_changeSet        =>    'changeSet',              # hash { :items => [] }
-#    :j_culprits         =>    'culprits'                # array of User objects
-#  }
-
 end #-end class Build
 end #-end module Jenkins
 end #-end module CI
-
-# Example extract of JSON
-#
-# {"actions":[
-#     {"causes":[
-#         {"shortDescription":"Started by user hudson-rose",
-#          "userName":"hudson-rose"}]},
-#     {"buildsByBranchName":
-#          "origin/too1-versioning-rc":
-#             {"buildNumber":643,
-#              "buildResult":null,
-#              "revision":
-#                 {"SHA1":"2efe7d8bbeab0b0f6676cec671bf98cb6f6ea3e0",
-#                  "branch":[
-#                     {"SHA1":"2efe7d8bbeab0b0f6676cec671bf98cb6f6ea3e0",
-#                      "name":"origin/too1-versioning-rc"}]}},
-#      "lastBuiltRevision":
-#         {"SHA1":"beae0be1bafeb2f91f0e8785fef8ddff9096969c",
-#          "branch":[
-#             {"SHA1":"beae0be1bafeb2f91f0e8785fef8ddff9096969c",
-#              "name":"origin/cave3-kgs1-branch2-rc"}]}},
-#     {},
-#     {}],
-#   "artifacts": [],
-#   "building": false,
-#   "description": "beae0be1bafeb2f91f0e8785fef8ddff9096969c",
-#   "duration": 8675445,
-#   "fullDisplayName": "C0-Start #700 cave3-kgs1-branch2-rc (beae0be1)",
-#   "id": "2011-11-08_18-52-40",
-#   "keepLog": false,
-#   "number": 700,
-#   "result": "SUCCESS",
-#   "timestamp": 1320807160000,
-#   "url": "http://hudson-rose-30.llnl.gov:8080/job/C0-Start/700/",
-#   "builtOn": "hudson-rose-27",
-#   "changeSet":
-#     {"items":[
-#         {"author":
-#             {"absoluteUrl":"http://hudson-rose-30.llnl.gov:8080/user/Dan%20Quinlan",
-#              "fullName":"Dan Quinlan"},
-#          "comment":"Added more support for C++ to ROSE using EDG version 4.3 front-end (60 C++ specific codes now passing, plus all C test codes).\n",
-#          "date":"2011-11-07 17:08:18 -0800",
-#          "id":"aaef8e64afa911489500716715ff27aff04be54b",
-#          "msg":"Added more support for C++ to ROSE using EDG version 4.3 front-end (60 C++ specific codes now passing, plus all C test codes).",
-#          "paths":[
-#             {"editType":"edit",
-#              "file":"src/backend/unparser/nameQualificationSupport.C"},
-#             {"editType":"edit",
-#              "file":"src/frontend/CxxFrontend/EDG"},
-#             {"editType":"edit",
-#              "file":"tests/CompileTests/Cxx_tests/Makefile.am"},
-#             {"editType":"add",
-#              "file":"tests/CompileTests/Cxx_tests/test2011_151.C"}]},
-#         {"author":
-#             {"absoluteUrl":"http://hudson-rose-30.llnl.gov:8080/user/Kamal%20Sharma",
-#              "fullName":"Kamal Sharma"},
-#          "comment":"Added stdlib.h for new version of gcc >= 4.3.2.\n",
-#          "date":"2011-11-08 14:40:45 -0600",
-#          "id":"0d0b3063b3446f50291f07a3798f8d1568cf28ca",
-#          "msg":"Added stdlib.h for new version of gcc >= 4.3.2.",
-#          "paths":[
-#             {"editType":"edit",
-#              "file":"projects/DataFaultTolerance/src/faultToleranceArrayLibUtility.C"},
-#             {"editType":"edit",
-#              "file":"projects/DataFaultTolerance/src/arrayBase.h"},
-#             {"editType":"edit",
-#              "file":"projects/DataFaultTolerance/src/pragmaHandling.C"}]}],
-#      "kind":null},
-#   "culprits":[
-#     {"absoluteUrl":"http://hudson-rose-30.llnl.gov:8080/user/Justin%20Too",
-#      "fullName":"Justin Too"},
-#     {"absoluteUrl":"http://hudson-rose-30.llnl.gov:8080/user/Dan%20Quinlan",
-#      "fullName":"Dan Quinlan"},
-#     {"absoluteUrl":"http://hudson-rose-30.llnl.gov:8080/user/Kamal%20Sharma",
-#      "fullName":"Kamal Sharma"}]}
-
 

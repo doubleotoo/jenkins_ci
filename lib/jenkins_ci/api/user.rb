@@ -49,6 +49,14 @@ class User < JsonResource
     super("/user/#{full_name}", jenkins, lazy_load)
   end
 
+  def <=>(o)
+    return self.full_name <=> o.full_name
+  end
+
+  #-----------------------------------------------------------------------------
+  #  API
+  #-----------------------------------------------------------------------------
+
 #  DETAIL = {
 #   Internal symbol           Jenkins symbol            Description
 #   ===============           ==============            ===========

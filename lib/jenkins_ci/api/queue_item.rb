@@ -45,6 +45,10 @@ class QueueItem
     @j_buildableStartMilliseconds = buildableStartMilliseconds
   end
 
+  #-----------------------------------------------------------------------------
+  #  API
+  #-----------------------------------------------------------------------------
+
   def to_s
     {
       :api  =>  instance_variables.collect { |varname|

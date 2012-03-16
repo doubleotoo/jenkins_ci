@@ -13,6 +13,7 @@
 $: << File.dirname( __FILE__)
 load "jenkins.rb"
 load "json_resource.rb"
+load "project.rb"
 
 #-------------------------------------------------------------------------------
 #  Jenkins
@@ -20,61 +21,64 @@ load "json_resource.rb"
 
 module CI
 module Jenkins
-#
-# Create View using named constructor +View.create+.
-#
-class View  < JsonResource
-  attr_reader :name
+
+class View < JsonResource
   class << self; attr_accessor :cache end
-  @cache = {} # TODO: remove, should be INHERITED from JsonResource < CacheableObject
+  @cache = {}
 
-  def self.create(name, jenkins, lazy_load=true)
-    if name.nil? or jenkins.nil?
-      raise "View::NilError: name=#{name}, jenkins=#{jenkins}"
-    end
+  attr_reader :name
 
+  # Returns a DB::Project (ActiveRecord object)
+  def self.create(name, jenkins, exclude_projects=[])
     key = generate_cache_key(name)
-    @cache[key] ||= new(name, jenkins, lazy_load)
+    json = @cache[key] ||= new(name, jenkins, exclude_projects)
   end
 
   # ==== Arguments
-  #  * +name+ is the name of this Jenkins view.
+  #  * +name+ is the name of this Jenkins project.
   #  * +jenkins+ is the Jenkins server instance.
-  #  * +lazy_load+ indicates whether we should load only
-  #    when required.
   #
-  def initialize(name, jenkins, lazy_load=true)
-    @name = name
-    super("/view/#{name}", jenkins, lazy_load)
+  def initialize(name, jenkins, exclude_projects=[])
+    if name.nil?
+        raise "NilError: name=#{name}"
+    else
+        @name             = name
+        @exclude_projects = exclude_projects
+        super("/view/#{name}", jenkins, parameters=[
+            'tree=name,jobs[name]'])
+    end
   end
 
-  # TODO: resolve circular dependency otherwise infinite recursion
-  # e.g. project A <-> project B
-  def to_s
-    {
-      :name =>  @name,
-      :api  =>  instance_variables.collect { |varname|
-                  var = self.instance_variable_get(varname) if varname.match(/^@j_/)
-                  if var.kind_of?(Array)
-                    { varname => "Array<#{var.first.class}>##{var.size}" }
-                  elsif not var.nil?
-                    { varname => var }
-                  else
-                    nil
-                  end
-                }.compact
-    }
-  end
+  # Setup this Resource with its corresponding Jenkins JSON.
+  def sync
+      puts "Syncing #{@path}" if $verbose
+      @json = get_json
 
-#  DETAIL = {
-#   Internal symbol               Jenkins symbol            Description
-#   ===============               ==============            ===========
-#    :j_description            =>  'description',            # html string
-#    :j_jobs                   =>  'jobs',                   # array [{name, url, color}, ..]
-#    :j_name                   =>  'name',                   # string
-#    :j_property               =>  'property',               # array (?)
-#    :j_url                    =>  'url',                    # string
-#  }
+      @json.each do |key, value|
+        puts "Project::#{key}=#{value}" if $verbose
+        case key
+        #---- Upstream and Downstream Projects
+        when 'jobs'
+          projects = []
+          value.each do |project|
+            next if @exclude_projects.include?(project['name'])
+            project = CI::Jenkins::Project.create(project['name'], @jenkins)
+            projects.push(project)
+          end
+          value = projects
+        end #-end case key
+
+        ############################
+        # !! Create the attribute !!
+        ############################
+        create_attribute("j_#{key}", value)
+        ############################
+      end #-end @json.each
+  end #-end sync
+
+  def <=>(o)
+    return self.name <=> o.name
+  end
 
 end #-end class View
 end #-end module Jenkins
