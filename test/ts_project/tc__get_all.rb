@@ -15,7 +15,7 @@ class TestGetAll < CI::Jenkins::TestCase
 
   def test_count
     projects = CI::Jenkins::Project.get_all(@jenkins, false)
-    assert_equal(4, projects.size)
+    assert_equal(5, projects.size)
   end
  
 end
