@@ -12,14 +12,6 @@
 #-------------------------------------------------------------------------------
 #  Dependencies
 #-------------------------------------------------------------------------------
-$: << File.dirname( __FILE__)
-require "jenkins.rb"
-require "cached_object.rb"
-require "project.rb"
-require "build.rb"
-require "user.rb"
-require "queue_item.rb"
-require "result.rb"
 
 #-------------------------------------------------------------------------------
 #  Jenkins

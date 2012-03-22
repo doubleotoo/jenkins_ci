@@ -10,10 +10,9 @@
 #-------------------------------------------------------------------------------
 #  Dependencies
 #-------------------------------------------------------------------------------
-$: << File.dirname( __FILE__)
-load "jenkins.rb"
-load "json_resource.rb"
-load "build.rb"
+require 'jenkins_ci/api/build.rb'
+require 'jenkins_ci/api/json_resource.rb'
+require 'jenkins_ci/models/project.rb'
 
 #-------------------------------------------------------------------------------
 #  Jenkins
@@ -21,7 +20,6 @@ load "build.rb"
 
 module CI
 module Jenkins
-
 
 #
 # Jenkins Project from JSON.
@@ -63,10 +61,10 @@ class Project < JsonResource
 
   attr_reader :name
 
-  # Returns a DB::Project (ActiveRecord object)
+  # Returns a CI::Jenkins::DB::Project (ActiveRecord object)
   def self.create(name, jenkins)
     begin
-        o = DB::Project.find_by_project_name!(name)
+        o = CI::Jenkins::DB::Project.find_by_project_name!(name)
 
         # * sync with remote Json source
         # * update builds
@@ -82,7 +80,7 @@ class Project < JsonResource
         # 2. Fetch JSON
         # 3. Update with extra JSON fields
         ActiveRecord::Base.transaction(:requires_new => true) do
-            o = DB::Project.create(:project_name => name)
+            o = CI::Jenkins::DB::Project.create(:project_name => name)
 
             json = @cache[key] ||= new(name, jenkins)
 
@@ -91,7 +89,7 @@ class Project < JsonResource
             end
 
             o.url       = json.j_url
-            o.save
+            o.save!
             $logger.info "created #{o.to_s}"
         end
     end
@@ -107,7 +105,7 @@ class Project < JsonResource
         raise "NilError: name=#{name}"
     else
         # TODO: avoid infinite recursion – cleaner way?
-        key = CacheableObject.generate_cache_key(name)
+        key = JsonResource.generate_cache_key(name)
         Project.cache[key] = self
 
         @name = name

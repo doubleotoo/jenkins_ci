@@ -10,10 +10,8 @@
 #-------------------------------------------------------------------------------
 #  Dependencies
 #-------------------------------------------------------------------------------
-$: << File.dirname( __FILE__)
-load "jenkins.rb"
-load "json_resource.rb"
-load "project.rb"
+require 'jenkins_ci/api/json_resource.rb'
+require 'jenkins_ci/api/project.rb'
 
 #-------------------------------------------------------------------------------
 #  Jenkins

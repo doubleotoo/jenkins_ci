@@ -10,9 +10,8 @@
 #-------------------------------------------------------------------------------
 #  Dependencies
 #-------------------------------------------------------------------------------
-$: << File.dirname( __FILE__)
-load "jenkins.rb"
-load "json_resource.rb"
+require 'jenkins_ci/api/json_resource.rb'
+require 'jenkins_ci/models/build.rb'
 
 #-------------------------------------------------------------------------------
 #  Jenkins
@@ -58,7 +57,7 @@ class Build < JsonResource
         # For example, when the Build was persisted for the first time,
         # it was still building/queued/etc.
         #
-        o = DB::Build.find_by_project_name_and_number!(project.name, number)
+        o = CI::Jenkins::DB::Build.find_by_project_name_and_number!(project.name, number)
         if o.result.nil? or o.building == true
             # sync with remote Json source
             b = @cache[key] = Build.new(number, project, jenkins)
@@ -73,13 +72,15 @@ class Build < JsonResource
     rescue ActiveRecord::RecordNotFound
         b = @cache[key] ||= new(number, project, jenkins)
 
-        o = DB::Build.create(:project_name  => project.name,
+        o = CI::Jenkins::DB::Build.create!(:project_name  => project.name,
                              :number        => number,
                              :building      => b.j_building,
                              :url           => b.j_url,
                              :branch        => branch(b.j_description),
                              :sha1          => sha1(b.j_description),
                              :result        => b.j_result)
+          
+        o.save!
         $logger.info "created #{o.to_s}"
     end #-end begin..rescue
     return o
