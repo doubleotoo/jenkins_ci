@@ -33,6 +33,10 @@ class Project < ActiveRecord::Base
   #-------------------------------------------------------------------------
   #  API
   #-------------------------------------------------------------------------
+  def name
+    project_name
+  end
+
   def last_build
     builds.find(:first, :order => 'number DESC', :limit => 1)
   end

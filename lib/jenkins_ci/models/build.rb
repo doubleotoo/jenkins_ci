@@ -65,6 +65,22 @@ class Build < ActiveRecord::Base
                 :with => REGEXP_GIT_BRANCH,
                 :message => "'%{value}' is not a valid Git branch, expecting '#{REGEXP_GIT_BRANCH}'" }
 
+  def building?
+    self.building
+  end
+
+  def passed?
+    self.result == SUCCESS
+  end
+
+  def failed?
+    self.result == FAILURE
+  end
+
+  def aborted?
+    self.result == ABORTED
+  end
+
   def self.distinct_branches
     Build.find(:all,
         :select => 'distinct branch',
@@ -77,6 +93,39 @@ class Build < ActiveRecord::Base
         :select => 'distinct sha1',
         :conditions => 'sha1 is not null',
         :order => 'sha1 asc').collect { |b| b.sha1 }
+  end
+
+  #
+  # {
+  #   'too1-main-rc' => {
+  #       '12345566934' => {
+  #         'C0-Start' => [build1, build2, ... , buildN],
+  #         'Commit' => [build1, build2, ... , buildN],
+  #       },
+  #       '33333333333' => {
+  #         'C0-Start' => [build1, build2, ... , buildN],
+  #       },
+  #       ...
+  #       },
+  #   'rpm-bugfixes-rc' => {
+  #       '33333333333' => {
+  #         'C0-Start' => [build1, build2, ... , buildN],
+  #       },
+  #       ...
+  #       },
+  #   ...
+  #
+  def self.sha1s_by_branch
+    builds_by_branch = {}
+    Build.distinct_branches.each do |branch|
+      builds_by_branch[branch] ||= {}
+      Build.find_all_by_branch(branch, :order => 'project_name asc').each do |build|
+        builds_by_branch[branch][build.sha1] ||= {}
+        builds_by_branch[branch][build.sha1][build.project_name] ||= []
+        builds_by_branch[branch][build.sha1][build.project_name].push(build)
+      end
+    end
+    return builds_by_branch
   end
 
 

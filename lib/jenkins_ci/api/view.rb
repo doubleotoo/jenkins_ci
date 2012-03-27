@@ -28,7 +28,8 @@ class View < JsonResource
   # Returns a CI::Jenkins::Project (JSON resource)
   def self.create(name, jenkins, exclude_projects=[])
     key = generate_cache_key(name)
-    json = @cache[key] ||= new(name, jenkins, exclude_projects)
+    #json = @cache[key] ||= new(name, jenkins, exclude_projects)
+    new(name, jenkins, exclude_projects)
   end
 
   # ==== Arguments

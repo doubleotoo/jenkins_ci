@@ -58,12 +58,14 @@ class Build < JsonResource
         # it was still building/queued/etc.
         #
         o = CI::Jenkins::DB::Build.find_by_project_name_and_number!(project.name, number)
-        if o.result.nil? or o.building == true
+        if o.result.nil? or o.building == true or (o.sha1.nil? and not o.result.nil?)
             # sync with remote Json source
             b = @cache[key] = Build.new(number, project, jenkins)
 
             o.result   = b.j_result
             o.building = b.j_building
+            o.branch   = branch(b.j_description)
+            o.sha1     = sha1(b.j_description)
             o.save
             o.logger.info "updated #{o.to_s}"
         else
