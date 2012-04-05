@@ -120,7 +120,7 @@ class Project < JsonResource
       @json = get_json
 
       @json.each do |key, value|
-        $logger.debug "Project::#{key}=#{value}"
+        #$logger.debug "Project::#{key}=#{value}"
         case key
         #---- Builds
         when 'builds'

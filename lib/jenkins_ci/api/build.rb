@@ -115,7 +115,7 @@ class Build < JsonResource
       @json = get_json
 
       @json.each do |key, value|
-        $logger.debug "Build::#{key}"
+        #$logger.debug "Build::#{key}"
         #case key
         #---- <description>
         #when '<key>',
